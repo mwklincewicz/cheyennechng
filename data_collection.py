@@ -7,7 +7,7 @@ dir_path = 'C:/thesis_dss'
 absolute_path = os.path.join(dir_path, 'LISS Surveys')
 
 # Data files for each LISS Survey wave stored as STATA files (Social Integration & Leisure, Health, Personality, and Background vars)
-files = ['ch07a_2p_EN.dta', 'ch08b_EN_1.3p.dta', 'ch09c_EN_1.1p.dta', 'ch10d_EN_1.0p.dta', 'ch11e_EN_1.0p.dta', 'ch12f_EN_1.0p.dta', 'ch13g_EN_1.0p.dta', 'ch15h_EN_1.2p.dta',
+files = ['ch08b_EN_1.3p.dta', 'ch09c_EN_1.1p.dta', 'ch10d_EN_1.0p.dta', 'ch11e_EN_1.0p.dta', 'ch12f_EN_1.0p.dta', 'ch13g_EN_1.0p.dta', 'ch15h_EN_1.2p.dta',
          'ch16i_EN_1.0p.dta', 'ch17j_EN_1.0p.dta', 'ch18k_EN_1.0p.dta', 'ch19l_EN_1.0p.dta', 'ch20m_EN_1.0p.dta', 'ch21n_EN_1.0p.dta', 'ch23p_EN_1.0p.dta', 'ch24q_EN_1.1p.dta',
          'cp08a_1p_EN.dta', 'cp09b_1.0p_EN.dta', 'cp10c_1.0p_EN.dta', 'cp11d_1.0p_EN.dta', 'cp12e_1.0p_EN.dta', 'cp13f_EN_1.0p.dta', 'cp14g_EN_1.0p.dta', 'cp15h_EN_1.0p.dta',
          'cp17i_EN_1.0p.dta', 'cp18j_EN_1.0p.dta', 'cp19k_EN_1.0p.dta', 'cp20l_EN_1.0p.dta', 'cp21m_EN_1.0p.dta', 'cp22n_EN_1.0p.dta', 'cp23o_EN_1.0p.dta', 'cp24p_EN_1.0p.dta',
@@ -36,7 +36,7 @@ for file in sav_files:
     if file[:2] =='ch':
         vars = {
         'nomem_encr': 'nomem_encr',
-        'Health Perception': file[:5] + '004',  # Measures person's own perception of their health, generally.
+        'Health_Perception': file[:5] + '004',  # Measures person's own perception of their health, generally.
         # Mental Health Inventory
         'MHI_1': file[:5] + '011',   # I felt very anxious.
         'MHI_2': file[:5] + '012',   # I felt so down that nothing could cheer me up.
@@ -113,7 +113,7 @@ for file in files:
     if file[:2] =='ch':
         vars = {
         'nomem_encr': 'nomem_encr',
-        'Health Perception': file[:5] + '004',  # Measures person's own perception of their health, generally.
+        'Health_Perception': file[:5] + '004',  # Measures person's own perception of their health, generally.
         # Mental Health Inventory
         'MHI_1': file[:5] + '011',   # I felt very anxious.
         'MHI_2': file[:5] + '012',   # I felt so down that nothing could cheer me up.
