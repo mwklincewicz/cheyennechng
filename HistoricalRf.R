@@ -20,7 +20,7 @@ RF_validation_df       <- read.delim(file.path(absolute_path, "Hist_RF_CV_Valida
 RF_validation_train_df <- RF_validation_train_df[, !grepl("^index|^Unnamed", names(RF_validation_train_df))]
 RF_validation_df       <- RF_validation_df[, !grepl("^index|^Unnamed", names(RF_validation_df))]
 
-# Convert 'Year' to numeric
+# Convert Year to numeric
 RF_validation_train_df$Year <- as.numeric(RF_validation_train_df$Year)
 RF_validation_df$Year       <- as.numeric(RF_validation_df$Year)
 
@@ -30,8 +30,8 @@ predictors_val   <- RF_validation_df[, names(predictors_train)]
 
 # -----------------------------
 # Hyperparameter tuning
-ntrees_values <- c(128)
-mtry_values   <- c(21)
+ntrees_values <- c(64, 80, 96, 112, 128)
+mtry_values   <- c(4, 5, 21)
 
 # Metrics storage
 rmse_scores <- matrix(NA, nrow=length(ntrees_values), ncol=length(mtry_values))

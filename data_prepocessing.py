@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
+from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
+from sklearn.preprocessing import StandardScaler
 
 # Load merged dataset
 dir_path = 'C:/thesis_dss'
@@ -197,6 +199,14 @@ occupation_code_mapping = {
 }
 merged_df['Occupation_Code'] = merged_df['Occupation_Text'].replace(occupation_code_mapping)
 
+#%%
+# extreme values
+merged_df = merged_df[
+    (merged_df["Household Income"] >= 1000) &
+    (merged_df["Household Income"] <= 25000)
+]
+
+#%%
 # ------------------------------------------------------------------------------------------------------
 # MISSING DATA IMPUTATION
 
@@ -247,6 +257,7 @@ imputer = IterativeImputer(max_iter=5, random_state=42)
 # Fit and transform the imputer on the remaining data
 merged_df[numeric_cols] = imputer.fit_transform(merged_df[numeric_cols])
 
+#%%
 # ----------------------------------------------------------------------------------------------------
 # MHI-5 scores calculation
 mhi_cols = ['MHI_1', 'MHI_2', 'MHI_3', 'MHI_4', 'MHI_5']
@@ -333,6 +344,20 @@ def calculate_optimism_score(data, optimism_cols):
     return data
 merged_df = calculate_optimism_score(merged_df, optimism_cols)
 
+
+#%%
+# Feature scaling
+cols_to_scale = [
+    'Age',
+    'Nr household members', 'Household Income', 'Health_Perception', 'Leisure_Satisfaction',
+    'Social_Contact_Score', 'MHI_Score', 'Life_Satisfaction_Score', 'Extraversion', 'Agreeableness',
+    'Conscientiousness', 'Emotional_Stability', 'Intellect_Imagination', 'Self_esteem_Score', 'IOS', 'Optimism_Score'
+]
+
+scaler = StandardScaler()
+
+merged_df[cols_to_scale] = scaler.fit_transform(merged_df[cols_to_scale])
+
 # ---------------------------------------------------------------------------------------------------
 # SAVE CLEANED DATASET
 
@@ -349,6 +374,7 @@ columns_to_keep = [
 cleaned_df = merged_df[columns_to_keep].copy()
 cleaned_df.to_csv(absolute_path + 'Cleaned_dataset.csv', index=False)
 
+#%%
 # ----------------------------------------------------------------------------------------------------
 # CALCULATE DERIVATIVE
 # Computes the rate of change in loneliness per year between observations
@@ -357,13 +383,16 @@ cleaned_df['Loneliness_Slope'] = (
     / cleaned_df.groupby('nomem_encr')['Year'].diff()
 )
 
-# lagged slope
+# change
 cleaned_df["Loneliness_Change"] = (
     cleaned_df.groupby("nomem_encr")["Loneliness_Score"].diff()
 )
 
-# Drop first observation per participant
-cleaned_df = cleaned_df.dropna(subset=['Loneliness_Slope'])
+cleaned_df['Loneliness_std'] = (
+    cleaned_df.groupby('nomem_encr')['Loneliness_Score']
+    .transform(lambda x: x.shift(1).rolling(3).std())
+)
+
 
 # Move Loneliness_Score to last column
 cols = [col for col in cleaned_df.columns if col != 'Loneliness_Score'] + ['Loneliness_Score']
@@ -371,6 +400,5 @@ cleaned_df = cleaned_df[cols]
 
 # ---------------------------------------------------------------------------------------------------
 # SAVE SLOPE DATASET
-
 cleaned_df.to_csv(absolute_path + 'slope_dataset.csv', index=False)
 

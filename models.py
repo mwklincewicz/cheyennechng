@@ -26,7 +26,7 @@ numerical_cols = [
     'Urbanity', 'Education Level', 'Health_Perception', 'Leisure_Satisfaction', 'Social_Contact_Score',
     'MHI_Score', 'Life_Satisfaction_Score', 'Extraversion',
     'Agreeableness', 'Conscientiousness', 'Emotional_Stability', 'Intellect_Imagination',
-    'Self_esteem_Score', 'IOS', 'Optimism_Score', 'Loneliness_Change'
+    'Self_esteem_Score', 'IOS', 'Optimism_Score', 'Loneliness_Slope', 'Loneliness_Change', 'Loneliness_std'
 ]
 
 features = [
@@ -34,21 +34,23 @@ features = [
     'Urbanity', 'Education Level', 'Occupation_Code',
     'Health_Perception', 'Leisure_Satisfaction', 'Social_Contact_Score', 'MHI_Score', 'Life_Satisfaction_Score', 'Extraversion',
     'Agreeableness', 'Conscientiousness', 'Emotional_Stability', 'Intellect_Imagination',
-    'Self_esteem_Score', 'IOS', 'Optimism_Score', 'Loneliness_Change'
+    'Self_esteem_Score', 'IOS', 'Optimism_Score', 'Loneliness_Slope', 'Loneliness_Change', 'Loneliness_std'
 ]
 
 X = model_df[features]
 y = model_df[outcome]
 
+#%%
 # -------------------------------------
-# Aggregate the target column to 1 row per ID/nomem_encr
-aggregated_data = model_df.groupby(['nomem_encr']).agg({
-    'Loneliness_Score': 'last'
-}).reset_index()
+# Create ID-level dataset ONLY for stratification
+id_level = model_df[['nomem_encr', 'Loneliness_Score']].copy()
+
+# Take ONE value per ID for stratification (e.g., last measurement)
+id_level = id_level.sort_values('nomem_encr').groupby('nomem_encr').last().reset_index()
 
 # Create bins for stratification
-aggregated_data['Loneliness_bin'] = pd.qcut(
-    aggregated_data['Loneliness_Score'],
+id_level['Loneliness_bin'] = pd.qcut(
+    id_level['Loneliness_Score'],
     q=5,
     duplicates='drop'
 )
@@ -56,18 +58,18 @@ aggregated_data['Loneliness_bin'] = pd.qcut(
 # -------------------------------------
 # create stratified train and test sets based on unique IDs
 train_group, test_group = train_test_split(
-    aggregated_data,
+    id_level,
     test_size=0.2,
     random_state=42,
-    stratify=aggregated_data['Loneliness_bin']
+    stratify=id_level['Loneliness_bin']
 )
 
 # indices to split the complete dataset
-train_ids = list(train_group['nomem_encr'])
-test_ids = list(test_group['nomem_encr'])
+train_ids = train_group['nomem_encr']
+test_ids = test_group['nomem_encr']
 
-train_df = model_df[model_df['nomem_encr'].isin(train_ids)].reset_index()
-test_df = model_df[model_df['nomem_encr'].isin(test_ids)].reset_index()
+train_df = model_df[model_df['nomem_encr'].isin(train_ids)].reset_index(drop=True)
+test_df = model_df[model_df['nomem_encr'].isin(test_ids)].reset_index(drop=True)
 
 # save the train and test sets as text documents for HistoricalRF
 train_file_path = dir_path + '/HistoricalRF/Hist_RF_train'
@@ -87,11 +89,11 @@ val_train_group, val_validation_group = train_test_split(
     stratify=train_group['Loneliness_bin']
 )
 
-val_train_ids = list(val_train_group['nomem_encr'])
-val_validation_ids = list(val_validation_group['nomem_encr'])
+val_train_ids = val_train_group['nomem_encr']
+val_validation_ids = val_validation_group['nomem_encr']
 
-v_train_df = model_df[model_df['nomem_encr'].isin(val_train_ids)].reset_index()
-v_validation_df = model_df[model_df['nomem_encr'].isin(val_validation_ids)].reset_index()
+v_train_df = model_df[model_df['nomem_encr'].isin(val_train_ids)].reset_index(drop=True)
+v_validation_df = model_df[model_df['nomem_encr'].isin(val_validation_ids)].reset_index(drop=True)
 
 # save the cv_train and cv_validation set as text documents for HistoricalRF
 v_train_file_path = dir_path + '/HistoricalRF/Hist_RF_CV_Train'
@@ -116,9 +118,6 @@ preprocessor_non_tree = ColumnTransformer(
     remainder='passthrough'
 )
 
-outer_cv = GroupKFold(n_splits=5)
-inner_cv = GroupKFold(n_splits=5)
-
 pipeline = Pipeline(steps=[
     ("preprocessor", preprocessor_non_tree),
     ("model", LinearRegression())
@@ -128,114 +127,119 @@ param_grid = {
     "model__fit_intercept": [True, False]
 }
 
-grid_search = GridSearchCV(
-    estimator=pipeline,
-    param_grid=param_grid,
-    cv=inner_cv,
-    scoring="r2"
-)
+outer_cv = GroupKFold(n_splits=5)
 
-cv_results = cross_validate(
-    estimator=grid_search,
-    X=X,
-    y=y,
-    groups=groups,
-    cv=outer_cv,
-    scoring=["r2", "neg_mean_squared_error", "neg_mean_absolute_error"],
-    return_estimator=True
-)
+r2_scores = []
+mse_scores = []
+mae_scores = []
 
-print("R2:", np.mean(cv_results["test_r2"]))
-print("MSE:", -np.mean(cv_results["test_neg_mean_squared_error"]))
-print("MAE:", -np.mean(cv_results["test_neg_mean_absolute_error"]))
+for train_idx, test_idx in outer_cv.split(X, y, groups):
+    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+    groups_train = groups.iloc[train_idx]
+
+    grid_search = GridSearchCV(
+        estimator=pipeline,
+        param_grid=param_grid,
+        cv=GroupKFold(n_splits=5),
+        scoring="r2"
+    )
+
+    # groups passed to inner CV
+    grid_search.fit(X_train, y_train, groups=groups_train)
+
+    best_model = grid_search.best_estimator_
+    y_pred = best_model.predict(X_test)
+
+    r2_scores.append(r2_score(y_test, y_pred))
+    mse_scores.append(mean_squared_error(y_test, y_pred))
+    mae_scores.append(mean_absolute_error(y_test, y_pred))
+
+final_model = Pipeline(steps=[
+    ("preprocessor", preprocessor_non_tree),
+    ("model", LinearRegression())
+])
+
+final_model.fit(X, y)
+
+print("R2:", np.mean(r2_scores))
+print("MSE:", np.mean(mse_scores))
+print("MAE:", np.mean(mae_scores))
 
 
 #%%
 # SHAP
-grid = cv_results["estimator"][0]
-best_pipeline = grid.best_estimator_
-preprocessor = best_pipeline.named_steps["preprocessor"]
-model = best_pipeline.named_steps["model"]
-X_transformed = preprocessor.transform(X)
-explainer = shap.Explainer(model, X_transformed)
-shap_values = explainer(X_transformed)
+X_sample = X.sample(500, random_state=42)
 
-# Global feature importance
+explainer = shap.Explainer(final_model.predict, X_sample)
+shap_values = explainer(X_sample)
+
 shap.summary_plot(
     shap_values,
-    X_transformed,
-    feature_names=features
+    X_sample,
+    feature_names=X.columns
 )
 
 #%%
-# random forest
+# random forest nested cv
+outer_cv = GroupKFold(n_splits=5)
+inner_cv = GroupKFold(n_splits=5)
 
-# Initialize dictionaries to store performances
-performance_cv = {}
-performance_test = {}
+r2_scores, mse_scores, mae_scores = [], [], []
 
 # Parameter grid for grid search
 param_grid_rf = {
-    'n_estimators': [100, 200, 300],
-    'max_depth': [5, 10, 20, None],
-    'min_samples_leaf': [1, 3, 5],
+    'n_estimators': [64, 80, 96, 112, 128],
     'max_features': ['sqrt', 'log2', None]
 }
 
-# Iterate over different measurements
-for measurement in ['mean']:
-    # Aggregate data
-    agg_cols = {col: measurement for col in model_df.columns}
-    agg_cols[outcome] = 'last'
-    agg_data = model_df.groupby('nomem_encr').agg(agg_cols)
+for train_idx, test_idx in outer_cv.split(X, y, groups):
+    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+    groups_train    = groups.iloc[train_idx]
 
-    # create train and validation set
-    X_train = agg_data.loc[train_ids].drop(columns=outcome)
-    y_train = agg_data.loc[train_ids][outcome]
-    X_test = agg_data.loc[test_ids].drop(columns=outcome)
-    y_test = agg_data.loc[test_ids][outcome]
-
-    groups = X_train.index
-    # perform grid search
     grid_search = GridSearchCV(
-        RandomForestRegressor(random_state=42, n_jobs=-1),
-        param_grid_rf,
+        estimator=RandomForestRegressor(random_state=42, n_jobs=-1),
+        param_grid=param_grid_rf,
+        cv=inner_cv,
         scoring='r2',
-        cv=GroupKFold(n_splits=5),
-        n_jobs=-1
+        n_jobs=-1,
+        refit=True,
     )
-    grid_search.fit(X_train, y_train, groups=groups)
+    grid_search.fit(X_train, y_train, groups=groups_train)
 
-    best_model = grid_search.best_estimator_
-    label = f"RandomForest using {measurement}"
-    performance_cv[label] = [grid_search.best_score_]
+    y_pred = grid_search.best_estimator_.predict(X_test)
+    r2_scores.append(r2_score(y_test, y_pred))
+    mse_scores.append(np.sqrt(mean_squared_error(y_test, y_pred)))
+    mae_scores.append(mean_absolute_error(y_test, y_pred))
 
-    best_model.fit(X_train, y_train)
-    y_pred = best_model.predict(X_test)
+print(f"R²:   {np.mean(r2_scores):.3f} ± {np.std(r2_scores):.3f}")
+print(f"MSE: {np.mean(mse_scores):.3f} ± {np.std(mse_scores):.3f}")
+print(f"MAE:  {np.mean(mae_scores):.3f} ± {np.std(mae_scores):.3f}")
 
-    performance_test[label] = {
-        "R2": r2_score(y_test, y_pred),
-        "MSE": mean_squared_error(y_test, y_pred),
-        "MAE": mean_absolute_error(y_test, y_pred)
-    }
+# Final model trained on ALL data with best params from last fold
+final_model = grid_search.best_estimator_
 
-    print(f"\n{label}")
-    print(f"Best params:   {grid_search.best_params_}")
-    print(f"Validation R2: {grid_search.best_score_:.3f}")
-    print(f"Test R2:       {performance_test[label]['R2']:.3f}")
-    print(f"Test MSE:      {performance_test[label]['MSE']:.3f}")
-    print(f"Test MAE:      {performance_test[label]['MAE']:.3f}")
 
 #%%
-#shap
-shap_results = {}
+# Refit best params on all data
+final_model = RandomForestRegressor(
+    **grid_search.best_params_,
+    random_state=42,
+    n_jobs=-1
+)
+final_model.fit(X, y)
 
-print(f"\nGenerating SHAP for: {measurement}")
-explainer = shap.TreeExplainer(best_model)
-shap_values = explainer.shap_values(X_test)
-shap_results[measurement] = shap_values
-shap.summary_plot(shap_values, X_test, show=True)
-shap.summary_plot(shap_values, X_test, plot_type="bar", show=True)
+# SHAP on a sample of the full dataset
+X_sample = X.sample(500, random_state=42)
+
+explainer   = shap.TreeExplainer(final_model)
+shap_values = explainer.shap_values(X_sample)
+
+shap_results["RandomForest"] = shap_values
+
+shap.summary_plot(shap_values, X_sample, feature_names=features, show=True)
+shap.summary_plot(shap_values, X_sample, plot_type="bar", feature_names=features, show=True)
 
 
 #%%
